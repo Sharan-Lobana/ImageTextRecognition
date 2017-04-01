@@ -1,3 +1,10 @@
+
+import cv2
+import matplotlib.pyplot as plt
+from matplotlib import style
+from sklearn import svm
+CNT_INNER_RECT = 2
+
 def contains(rect1, rect2):
     if rect1[0][0]-rect2[0][0] > .33*min(rect1[1][0]-rect1[0][0], rect2[1][0]-rect2[0][0]):
         return False
@@ -20,8 +27,7 @@ def compare(item1, item2):
     else:
         return 0
 
-import cv2
-img = cv2.imread('journey.jpg',0);  #read black and white image
+img = cv2.imread('test.jpg',0);  #read black and white image
 vis = img.copy()
 mser = cv2.MSER()
 regions = mser.detect(img, None)    #detect and extract MSER lasso-contours
@@ -34,11 +40,14 @@ for hull in hulls:
     rects.append([[x,y],[x+w,y+h]])     #add it to list for processing
     # cv2.rectangle(vis,(x,y),(x+w,y+h),(0,255,0),1)
 
-rects = sorted(rects, cmp=compare)
+rects = sorted(rects, cmp=compare)  #Sort the bounding rectangles in asc order
 
 
 ITER = 0
 
+# Heuristic to remove a rectangle if it contains more than
+# one inner rectangles. If a rectangle is surrounded by a
+# larger rectangle, the inner one is also removed
 while True:
     ITER += 1
     change = False
@@ -51,7 +60,7 @@ while True:
                 continue
             if contains(rects[i], rects[j]):
                 Count += 1
-        if Count > 1:   #if a rectangle contains more than 1 rectangle, remove it
+        if Count > CNT_INNER_RECT:   #if a rectangle contains more than 1 rectangle, remove it
             temp_rects = []
             for k in range(len(rects)):
                 if k==i:
@@ -83,11 +92,17 @@ for rect in rects:
     cv2.rectangle(vis,(rect[0][0],rect[0][1]),(rect[1][0],rect[1][1]),(0,255,0),1)  #plot the ractangles on image
 
 # cv2.polylines(vis, hulls, 1, (0, 255, 0))
+x1 = [i[0][0] for i in rects]
+y1 = [-i[0][1] for i in rects]
+
+plt.scatter(x1,y1)
+plt.show()
+
 
 print len(rects)
 
-cv2.imshow('img', vis)
-cv2.imwrite('union.jpg', vis)
-
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# cv2.imshow('img', vis)
+# cv2.imwrite('union.jpg', vis)
+#
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
