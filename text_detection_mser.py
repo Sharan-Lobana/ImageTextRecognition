@@ -27,7 +27,7 @@ def decoded(x):
         return chr(ord('a')+x-36)
     else:
         return "What?"
-        
+
 def area(rect):
     return (rect[1][0]-rect[0][0])*(rect[1][1]-rect[0][1])
 
@@ -132,6 +132,15 @@ print Y
 #
 #
 # print len(rects)
+# cv2.polylines(vis, hulls, 1, (0, 255, 0))
+x1 = [i[0][0] for i in rects]
+y1 = [-i[0][1] for i in rects]
+
+plt.scatter(x1,y1)
+plt.show()
+
+
+print len(rects)
 
 # cv2.imshow('img', vis)
 # cv2.imwrite('union.jpg', vis)
