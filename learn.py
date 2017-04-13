@@ -7,15 +7,37 @@ import os
 import pickle
 import time
 useSVM = False
-useNN = True
+useMLP = False
+useCNN = True
+
 USE_SMALL = True
 C_VAL = 10.0
-SHRINK_X = 0.25
-SHRINK_Y = 0.25
+SHRINK_X = 0.5
+SHRINK_Y = 0.5
 TEST_SET_FRAC = 0.15
-DATA_FRAC = .9
-NUM_CLASSES = 10
+DATA_FRAC = .3
+NUM_CLASSES = 36
 mypath = './Train'
+
+NFM = 16    #Number of feature maps
+FMDIM = 11 #Feature map dimension
+
+if useCNN:
+    from keras.models import Sequential
+    from keras.layers import Dense
+    from keras.layers import Dropout
+    from keras.layers import Flatten
+    from keras.constraints import maxnorm
+    from keras.optimizers import SGD
+    from keras.layers.convolutional import Conv2D
+    from keras.layers.convolutional import MaxPooling2D
+    from keras.utils import np_utils
+    from keras import backend as K
+    # K.set_image_dim_ordering('th')
+
+seed = 7
+np.random.seed(seed)
+
 directories = []
 for (dirpath, dirnames, filenames) in os.walk(mypath):
     directories.extend(dirnames)
@@ -45,9 +67,15 @@ for i in range(len(directories)):
             img = cv2.imread(path+os.sep+cf,0)
             if(USE_SMALL):
                 small = cv2.resize(img, (0,0), fx=SHRINK_X, fy=SHRINK_Y)
-                X.append(list(small.flatten()))
+                if(useCNN):
+                    X.append(small)
+                else:
+                    X.append(list(small.flatten()))
             else:
-                X.append(list(img.flatten()))
+                if(useCNN):
+                    X.append(img)
+                else:
+                    X.append(list(img.flatten()))
             Y.append(i)
             count_array[i] += 1
 
@@ -81,68 +109,193 @@ for ind in range(NUM_CLASSES):
         print "Number of test instances for "+chr(ord('A')+ind-36)+" "+str(len(xtest)-temp)
     temp = len(xtest)
 
-# print "y is: ",
-# print y
-# Don't use rbf kernel, gives bad testing error
+# Convert to numpy array and normalize if using CNN
+if useCNN:
+    x = np.asarray(x).astype('float32')
+    xtest = np.asarray(xtest).astype('float32')
+
+    y = np.asarray(y)
+    ytest = np.asarray(ytest)
+    # Normalize Inputs
+    x = x/255.0
+    xtest = xtest/255.0
+
+    # add an extra dimension for convolution
+    x = np.expand_dims(x,axis=3)
+    xtest = np.expand_dims(xtest,axis=3)
+    # one hot encode outputs (conversion to binary matrix)
+    y = np_utils.to_categorical(y)
+    ytest = np_utils.to_categorical(ytest)
+
+    print "NUM_CLASSES: "+str(ytest.shape[1])
+
 clf = None
 if useSVM:
+    # Don't use rbf kernel, gives bad testing error
     clf = svm.SVC(
         C=C_VAL,
         kernel='linear',
-        verbose=True
+        verbose=True,
+        probability=True,
+        cache_size=200,
+        class_weight=None,
+        random_state=None,
+        coef0=0.0,
+        decision_function_shape='ovo',
+        degree=3,
+        gamma='auto',
+        max_iter=-1,
+        shrinking=True,
+        tol=0.001,
     )
-elif useNN:
+elif useMLP:
     clf = MLPClassifier(
+        activation='tanh',
         solver='lbfgs',
-        alpha=100,
-        hidden_layer_sizes=(int(32*32), NUM_CLASSES),
+        alpha=20,
+        hidden_layer_sizes=(int(128*128*SHRINK_X*SHRINK_Y),int(64*64*SHRINK_X*SHRINK_Y)),
         random_state=1,
-        learning_rate_init=0.01,
-        max_iter=1000,
+        learning_rate_init=0.1,
+        max_iter=100,
         learning_rate='constant',
         verbose=True,
+        tol=0.000001
+    )
+    # print clf.out_activation_
+elif useCNN:
+    model = Sequential()
+    # Add a convolutional 2D layer with number of feature maps equal to NFM,
+    # dimension of feature map equal to FMDIM x FMDIM, shape of the input as
+    # specified , activation as specified and a constraint that maxnorm of any
+    # hidden layer weight vector will be 3
+    model.add(
+        Conv2D(
+            filters=NFM,
+            kernel_size=(FMDIM,FMDIM),
+            input_shape=(int(128*SHRINK_X),int(128*SHRINK_Y),1),
+            padding='same',
+            activation='relu',
+            kernel_constraint=maxnorm(3)
+        )
+    )
+    model.add(Dropout(0.2))
+    model.add(
+        Conv2D(
+            filters=2*NFM,
+            kernel_size=(FMDIM,FMDIM),
+            padding='valid',
+            activation='relu',
+            kernel_constraint=maxnorm(3)
+        )
+    )
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    # model.add(
+    #     Conv2D(
+    #         filters=4*NFM,
+    #         kernel_size=(FMDIM,FMDIM),
+    #         padding='valid',
+    #         activation='relu',
+    #         kernel_constraint=maxnorm(3)
+    #     )
+    # )
+    # model.add(Dropout(0.2))
+    # model.add(
+    #     Conv2D(
+    #         filters=8*NFM,
+    #         kernel_size=(FMDIM,FMDIM),
+    #         padding='valid',
+    #         activation='relu',
+    #         kernel_constraint=maxnorm(3)
+    #     )
+    # )
+    # model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(Flatten())
+    model.add(
+        Dense(
+            256,
+            activation='relu',
+            kernel_constraint=maxnorm(3)
+        )
+    )
+    model.add(Dropout(0.5))
+    model.add(
+        Dense(
+        NUM_CLASSES,
+        activation='softmax'
+        )
     )
 
-clf.fit(x,y)
+    epochs = 15
+    lrate = 0.01
+    decay = lrate/epochs
+    sgd = SGD(
+        lr=lrate,
+        momentum=0.9,
+        decay=decay,
+        nesterov=False
+    )
+    model.compile(
+        loss='categorical_crossentropy',
+        optimizer=sgd,
+        metrics=['accuracy']
+    )
 
-resulttrain = clf.predict(x)
-resulttest = clf.predict(xtest)
-# print "RESULTTEST"
-# print resulttest
-# print len(resulttest)
-# print "YTEST"
-# print ytest
-trainError = 0
-for i in range(len(resulttrain)):
-    if resulttrain[i] != y[i]:
-        trainError += 1
+    print(model.summary())
 
-testError = 0
-testErrorWOCase = 0
-for i in range(len(resulttest)):
-    if resulttest[i] != ytest[i]:
-        testError += 1
-        testErrorWOCase += 1
-        # Update test error without considering case
-        if((resulttest[i] > 9) and (ytest[i] > 9)):
-            if(abs(resulttest[i] - ytest[i]) == 26):
-                testErrorWOCase -= 1
-        print "Result is: "+str(resulttest[i]),
-        print " Desired is: "+str(ytest[i])
+    model.fit(
+        x,
+        y,
+        validation_data=(xtest,ytest),
+        epochs=epochs,
+        batch_size=32
+    )
+    scores = model.evaluate(xtest, ytest, verbose=1)
+    print("Accuracy: %.2f%%" % (scores[1]*100))
+if not useCNN:
+    clf.fit(x,y)
 
-trainErrorFrac = trainError/float(len(x))
-testErrorFrac = testError/float(len(xtest))
-testErrorWOCaseFrac = testErrorWOCase/float(len(xtest))
-print "Training error: "+str(trainErrorFrac)
-print "Testing error: "+str(testErrorFrac)
-print "Testing error w/o case : "+str(testErrorWOCaseFrac)
+    resulttrain = clf.predict(x)
+    resulttest = clf.predict(xtest)
+    resultprob = clf.predict_proba(xtest)
+    print resultprob
+    # print "RESULTTEST"
+    # print resulttest
+    # print len(resulttest)
+    # print "YTEST"
+    # print ytest
+    trainError = 0
+    for i in range(len(resulttrain)):
+        if resulttrain[i] != y[i]:
+            trainError += 1
 
-# Save the trained SVM for further use
-prefix = None
-if useSVM:
-    prefix = "MCSVC_"
-elif useNN:
-    prefix = "NN_"
-pickle_filename = "./TrainedPickles/"+prefix+str(int(time.time()))[-6:]+"_"+str(NUM_CLASSES)+\
-"_"+str(int((1-testErrorFrac)*10000)/100.0)+"_"+str(int((1-testErrorWOCaseFrac)*10000)/100.0)+".sav"
-pickle.dump(clf,open(pickle_filename,'wb'))
+    testError = 0
+    testErrorWOCase = 0
+    for i in range(len(resulttest)):
+        if resulttest[i] != ytest[i]:
+            testError += 1
+            testErrorWOCase += 1
+            # Update test error without considering case
+            if((resulttest[i] > 9) and (ytest[i] > 9)):
+                if(abs(resulttest[i] - ytest[i]) == 26):
+                    testErrorWOCase -= 1
+            # print "Result is: "+str(resulttest[i]),
+            # print " Desired is: "+str(ytest[i])
+
+    trainErrorFrac = trainError/float(len(x))
+    testErrorFrac = testError/float(len(xtest))
+    testErrorWOCaseFrac = testErrorWOCase/float(len(xtest))
+    print "Training error: "+str(trainErrorFrac)
+    print "Testing error: "+str(testErrorFrac)
+    print "Testing error w/o case : "+str(testErrorWOCaseFrac)
+
+    # Save the trained SVM for further use
+    prefix = None
+    if useSVM:
+        prefix = "MCSVC_"
+    elif useMLP:
+        prefix = "MLP_"
+    elif useCNN:
+        prefix="CNN_"
+    pickle_filename = "./TrainedPickles/"+prefix+str(int(time.time()))[-6:]+"_"+str(NUM_CLASSES)+"_"+str(SHRINK_X)+"_"+\
+    str(SHRINK_Y)+"_"+str(int((1-testErrorFrac)*10000)/100.0)+"_"+str(int((1-testErrorWOCaseFrac)*10000)/100.0)+".sav"
+    pickle.dump(clf,open(pickle_filename,'wb'))
