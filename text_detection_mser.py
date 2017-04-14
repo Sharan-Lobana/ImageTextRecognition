@@ -7,6 +7,44 @@ import numpy as np
 import pickle
 CNT_INNER_RECT = 2
 
+useSVM = False
+useMLP = False
+useCNN = True
+if useCNN:
+    from keras.models import Sequential
+    from keras.layers import Dense
+    from keras.layers import Dropout
+    from keras.layers import Flatten
+    from keras.constraints import maxnorm
+    from keras.optimizers import SGD
+    from keras.layers.convolutional import Conv2D
+    from keras.layers.convolutional import MaxPooling2D
+    from keras.utils import np_utils
+    from keras import backend as K
+    from keras.models import model_from_json
+
+seed = 7
+np.random.seed(seed)
+
+def mynormalization(image,new_dim):
+    array_shape = image.shape
+    min_dim = min(array_shape[0],array_shape[1])
+    new_array = None
+    if array_shape[0] != array_shape[1]:
+        if array_shape[0] == min_dim:
+            new_array = np.zeros((array_shape[1],array_shape[1]))
+            diff = array_shape[1] - array_shape[0]
+            new_array[diff/2:array_shape[0]+diff/2,:] = image
+            new_array = cv2.resize(new_array,(new_dim[0],new_dim[1]))
+        else:
+            new_array = np.zeros((array_shape[0],array_shape[0]))
+            diff = array_shape[0] - array_shape[1]
+            new_array[:,diff/2:array_shape[1]+diff/2] = image
+            new_array = cv2.resize(new_array,(new_dim[0],new_dim[1]))
+    else:
+        new_array = cv2.resize(image,(new_dim[0],new_dim[1]))
+    return new_array
+
 def contains(rect1, rect2):
     if rect1[0][0]-rect2[0][0] > .33*min(rect1[1][0]-rect1[0][0], rect2[1][0]-rect2[0][0]):
         return False
@@ -109,41 +147,42 @@ for rect in rects:
     height = rect[1][1]-rect[0][1]+1
     print "X: "+str(rect[0][0])+" Y: "+str(rect[0][1]),
     print " Length: "+str(length)+" Height: "+str(height)
-    char_array = np.zeros((height, length)) #No. of columns = length, No. of rows = height
-
-    # Copy the array column by column
-    for i in range(rect[0][0],rect[0][0]+length):
-        for j in range(rect[0][1],rect[0][1]+height):
-            char_array[j-rect[0][1]][i-rect[0][0]] = img[j][i]
+    #No. of columns = length, No. of rows = height
+    char_array = img[rect[0][1]:rect[1][1],rect[0][0]:rect[1][0]]
     X.append(char_array)
 # cv2.polylines(vis, hulls, 1, (0, 255, 0))
 
-X = [cv2.resize(image, (64, 64)) for image in X]
-X = [image.flatten() for image in X]
-clf = pickle.load(open('./SVMPickles/MCSVC_1491072043_0.0496169281284.sav','rb'))
-Y = clf.predict(X)
-Y = [decoded(y) for y in Y]
-print Y
-# x1 = [i[0][0] for i in rects]
-# y1 = [-i[0][1] for i in rects]
-#
-# plt.scatter(x1,y1)
-# plt.show()
-#
-#
-# print len(rects)
-# cv2.polylines(vis, hulls, 1, (0, 255, 0))
+X = [mynormalization(image,(64,64)) for image in X]
+X = np.asarray(X)
+X = np.expand_dims(X,axis=3)
+Y = []
+if useSVM or useMLP:
+    X = [image.flatten() for image in X]
+    clf = pickle.load(open('./SVMPickles/MCSVC_1491072043_0.0496169281284.sav','rb'))
+    Y = clf.predict(X)
+elif useCNN:
+    model_filename = "./TrainedPickles/CNN_218692_62_0.5_0.50.91.json"
+    json_file = open(model_filename, 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = model_from_json(loaded_model_json)
+    # load weights into new model
+    loaded_model.load_weights(model_filename[:-4]+"h5")
+    print("Loaded model from disk")
+    Y = loaded_model.predict_proba(X)
+    Y2 = loaded_model.predict_classes(X)
+    print Y
+    print Y2
+    Y3 = [decoded(y) for y in Y2]
+    print Y3
+
+# Y = [decoded(y) for y in Y]
+# print Y
+
 x1 = [i[0][0] for i in rects]
 y1 = [-i[0][1] for i in rects]
 
 plt.scatter(x1,y1)
 plt.show()
 
-
 print len(rects)
-
-# cv2.imshow('img', vis)
-# cv2.imwrite('union.jpg', vis)
-#
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()

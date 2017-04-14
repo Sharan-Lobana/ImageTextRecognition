@@ -15,7 +15,7 @@ C_VAL = 10.0
 SHRINK_X = 0.5
 SHRINK_Y = 0.5
 TEST_SET_FRAC = 0.15
-DATA_FRAC = .9
+DATA_FRAC = 1
 NUM_CLASSES = 62
 mypath = './Train'
 
@@ -33,7 +33,6 @@ if useCNN:
     from keras.layers.convolutional import MaxPooling2D
     from keras.utils import np_utils
     from keras import backend as K
-    # K.set_image_dim_ordering('th')
 
 seed = 7
 np.random.seed(seed)
@@ -130,6 +129,8 @@ if useCNN:
     print "NUM_CLASSES: "+str(ytest.shape[1])
 
 clf = None
+model = None
+scores = []
 if useSVM:
     # Don't use rbf kernel, gives bad testing error
     clf = svm.SVC(
@@ -225,8 +226,8 @@ elif useCNN:
         )
     )
 
-    epochs = 20
-    lrate = 0.005
+    epochs = 25
+    lrate = 0.001
     decay = lrate/epochs
     sgd = SGD(
         lr=lrate,
@@ -251,6 +252,7 @@ elif useCNN:
     )
     scores = model.evaluate(xtest, ytest, verbose=1)
     print("Accuracy: %.2f%%" % (scores[1]*100))
+
 if not useCNN:
     clf.fit(x,y)
 
@@ -258,11 +260,6 @@ if not useCNN:
     resulttest = clf.predict(xtest)
     resultprob = clf.predict_proba(xtest)
     print resultprob
-    # print "RESULTTEST"
-    # print resulttest
-    # print len(resulttest)
-    # print "YTEST"
-    # print ytest
     trainError = 0
     for i in range(len(resulttrain)):
         if resulttrain[i] != y[i]:
@@ -288,14 +285,25 @@ if not useCNN:
     print "Testing error: "+str(testErrorFrac)
     print "Testing error w/o case : "+str(testErrorWOCaseFrac)
 
-    # Save the trained SVM for further use
-    prefix = None
-    if useSVM:
-        prefix = "MCSVC_"
-    elif useMLP:
-        prefix = "MLP_"
-    elif useCNN:
-        prefix="CNN_"
-    pickle_filename = "./TrainedPickles/"+prefix+str(int(time.time()))[-6:]+"_"+str(NUM_CLASSES)+"_"+str(SHRINK_X)+"_"+\
-    str(SHRINK_Y)+"_"+str(int((1-testErrorFrac)*10000)/100.0)+"_"+str(int((1-testErrorWOCaseFrac)*10000)/100.0)+".sav"
+# Save the trained SVM for further use
+prefix = None
+if useSVM:
+    prefix = "MCSVC_"
+elif useMLP:
+    prefix = "MLP_"
+elif useCNN:
+    prefix="CNN_"
+pickle_filename = "./TrainedPickles/"+prefix+str(int(time.time()))[-6:]+"_"+\
+str(NUM_CLASSES)+"_"+str(SHRINK_X)+"_"+str(SHRINK_Y)
+if not useCNN:
+    pickle_filename = pickle_filename+"_"+str(int((1-testErrorFrac)*10000)/100.0)\
+    +"_"+str(int((1-testErrorWOCaseFrac)*10000)/100.0)+".sav"
     pickle.dump(clf,open(pickle_filename,'wb'))
+else:
+    model_json = model.to_json()
+    pickle_filename = pickle_filename+"%.2f"%scores[1]+".json"
+    with open(pickle_filename, "w") as json_file:
+        json_file.write(model_json)
+    # serialize weights to HDF5
+    model.save_weights(pickle_filename[:-4]+"h5")
+    print("Saved model to disk")
