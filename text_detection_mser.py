@@ -77,79 +77,84 @@ def compare(item1, item2):
     else:
         return 0
 
-img = cv2.imread('test.jpg',0);  #read black and white image
-vis = img.copy()
-mser = cv2.MSER()
-regions = mser.detect(img, None)    #detect and extract MSER lasso-contours
-hulls = [cv2.convexHull(p.reshape(-1, 1, 2)) for p in regions]  #take convex-hull of each contour
+def get_probable_rects(img, remove_redundant = True, rects = []):
+    mser = cv2.MSER()
+    regions = mser.detect(img, None)    #detect and extract MSER lasso-contours
+    hulls = [cv2.convexHull(p.reshape(-1, 1, 2)) for p in regions]  #take convex-hull of each contour
 
-rects = []
+    temp = img.copy()
+    cv2.polylines(temp, hulls, 1, (255, 255, 255))
+    cv2.imshow('MSER Convex Hulls', temp)
+    cv2.waitKey(0)
 
-for hull in hulls:
-    x,y,w,h = cv2.boundingRect(hull)    #convert the hull to bounding rectangle
-    rects.append([[x,y],[x+w,y+h]])     #add it to list for processing
-    # cv2.rectangle(vis,(x,y),(x+w,y+h),(0,255,0),1)
+    temp = img.copy()
 
-rects = sorted(rects, cmp=compare)  #Sort the bounding rectangles in asc order
+    for hull in hulls:
+        x,y,w,h = cv2.boundingRect(hull)    #convert the hull to bounding rectangle
+        cv2.rectangle(temp,(x,y),(x+w,y+h),(255,0,0),1)
+        rects.append([[x,y],[x+w,y+h]])     #add it to list for processing
+    cv2.imshow('Bounding Boxes', temp)
+    cv2.waitKey(0)
 
+    rects = sorted(rects, cmp=compare)
 
-ITER = 0
+    if not remove_redundant:
+        return rects
 
-# Heuristic to remove a rectangle if it contains more than
-# one inner rectangles. If a rectangle is surrounded by a
-# larger rectangle, the inner one is also removed
-while True:
-    ITER += 1
-    change = False
-    print ITER
+    ITER = 0
+    mark= []
+    for i in range(len(rects)):
+        mark.append(False)
     for i in range(len(rects)):
         # print i, "of ", len(rects), "iter: ", ITER
+        if mark[i]:
+            continue
         Count = 0
         for j in range(len(rects)):
             if i==j:
                 continue
+            if mark[j]:
+                continue
             if contains(rects[i], rects[j]):
                 Count += 1
-        if Count > CNT_INNER_RECT:   #if a rectangle contains more than 1 rectangle, remove it
-            temp_rects = []
-            for k in range(len(rects)):
-                if k==i:
-                    continue
-                temp_rects.append(rects[k])
-            rects = temp_rects
-            change = True
-            break
-
+        if Count > 1:   #if a rectangle contains more than 1 rectangle, remove it
+            mark[i] = True
+            continue
         for j in range(len(rects)):
             if i==j:
                 continue
+            if mark[j]:
+                continue
             if contains(rects[i], rects[j]):    #else remove the inner rectangle
-                temp_rects = []
-                for k in range(len(rects)):
-                    if j==k:
-                        continue
-                    temp_rects.append(rects[k])
-                rects = temp_rects
-                change = True
-                break
-        if change:
-            break
+                mark[j] = True
+    temp_rects = []
+    for i in range(len(rects)):
+        if not mark[i]:
+            temp_rects.append(rects[i])
+    return temp_rects
 
-    if not change:
-        break
+img = cv2.imread('sink.jpg',0)  #read black and white image
+vis = img.copy()
+rects = get_probable_rects(vis)
 
-for rect in rects:
-    cv2.rectangle(vis,(rect[0][0],rect[0][1]),(rect[1][0],rect[1][1]),(0,255,0),1)  #plot the ractangles on image
-
+height, width = img.shape
+cv2.rectangle(img,(0,0),(width-1,height-1),(100,100,100),-1)
 X = []
 for rect in rects:
-    length = rect[1][0]-rect[0][0]+1
-    height = rect[1][1]-rect[0][1]+1
-    print "X: "+str(rect[0][0])+" Y: "+str(rect[0][1]),
-    print " Length: "+str(length)+" Height: "+str(height)
+    # cv2.rectangle(mask,(rect[0][0],rect[0][1]),(rect[1][0],rect[1][1]),(255,255,255),-1)  #plot the ractangles on image
+    dx = rect[1][0]-rect[0][0]
+    dy = rect[1][1]-rect[0][1]
+    letter = vis[rect[0][1]:rect[1][1],rect[0][0]:rect[1][0]]
+    # thresh,letter = cv2.threshold(letter,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    # print thresh
+    img[rect[0][1]:rect[1][1],rect[0][0]:rect[1][0]] = letter
     #No. of columns = length, No. of rows = height
     char_array = img[rect[0][1]:rect[1][1],rect[0][0]:rect[1][0]]
     X.append(char_array)
+
+temp = img.copy()
+cv2.imshow('Removed Redundant MSERs', temp)
+cv2.waitKey(0)
 # cv2.polylines(vis, hulls, 1, (0, 255, 0))
 
 X = [mynormalization(image,(64,64)) for image in X]
@@ -158,7 +163,7 @@ X = np.expand_dims(X,axis=3)
 Y = []
 if useSVM or useMLP:
     X = [image.flatten() for image in X]
-    clf = pickle.load(open('./SVMPickles/MCSVC_1491072043_0.0496169281284.sav','rb'))
+    clf = pickle.load(open('./TrainedPickles/MCSVC_1491072043_0.0496169281284.sav','rb'))
     Y = clf.predict(X)
 elif useCNN:
     model_filename = "./TrainedPickles/CNN_218692_62_0.5_0.50.91.json"
@@ -182,7 +187,50 @@ elif useCNN:
 x1 = [i[0][0] for i in rects]
 y1 = [-i[0][1] for i in rects]
 
-plt.scatter(x1,y1)
-plt.show()
+for rect in rects:
+    # cv2.rectangle(mask,(rect[0][0],rect[0][1]),(rect[1][0],rect[1][1]),(255,255,255),-1)  #plot the ractangles on image
+    dx = rect[1][0]-rect[0][0]
+    dy = rect[1][1]-rect[0][1]
+    letter = vis[rect[0][1]:rect[1][1],rect[0][0]:rect[1][0]]
+    thresh,letter = cv2.threshold(letter,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    print thresh
+    img[rect[0][1]:rect[1][1],rect[0][0]:rect[1][0]] = letter
 
-print len(rects)
+temp = img.copy()
+cv2.imshow('Binarized MSERs', temp)
+cv2.waitKey(0)
+
+cv2.imwrite('plot_rects_binarized_1.jpg', img)
+img = cv2.imread('plot_rects_binarized_1.jpg',0)
+
+# print len(rects)
+# for rect in rects:
+#     dx = rect[1][0]-rect[0][0]
+#     dy = rect[1][1]-rect[0][1]
+#     Sum = 0
+#     cnt = 0
+#     for i in range(dx):
+#         Sum += img[max(rect[0][1]-5,0),rect[0][0]+i]
+#         Sum += img[min(rect[1][1]+5,height-1),rect[0][0]+i]
+#         cnt += 2
+#     for i in range(dy):
+#         Sum += img[rect[0][1]+i,max(rect[0][0]-5,0)]
+#         Sum += img[rect[0][1]+i,min(rect[1][0]+5,width-1)]
+#         cnt += 2
+#     Sum = Sum/float(cnt)
+#     if Sum < 120:
+#         for i in range(dy):
+#             for j in range(dx):
+#                 img[rect[0][1]+i,rect[0][0]+j] = 255 - img[rect[0][1]+i,rect[0][0]+j]
+#     cv2.rectangle(img,(rect[0][0],rect[0][1]),(rect[1][0],rect[1][1]),(175,175,175),1)
+
+# # vis = cv2.bitwise_and(vis,mask)
+# # cv2.polylines(vis, hulls, 1, (255, 255, 255))
+
+# # vis = cv2.adaptiveThreshold(vis,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,19,0)
+
+
+# cv2.imshow('img', img)
+# cv2.imwrite('plot_rects_binarized_1.jpg', img)
+
+cv2.destroyAllWindows()
