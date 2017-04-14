@@ -133,7 +133,7 @@ def get_probable_rects(img, remove_redundant = True, rects = []):
             temp_rects.append(rects[i])
     return temp_rects
 
-img = cv2.imread('sink.jpg',0)  #read black and white image
+img = cv2.imread('test.jpg',0)  #read black and white image
 vis = img.copy()
 rects = get_probable_rects(vis)
 
@@ -202,35 +202,5 @@ cv2.waitKey(0)
 
 cv2.imwrite('plot_rects_binarized_1.jpg', img)
 img = cv2.imread('plot_rects_binarized_1.jpg',0)
-
-# print len(rects)
-# for rect in rects:
-#     dx = rect[1][0]-rect[0][0]
-#     dy = rect[1][1]-rect[0][1]
-#     Sum = 0
-#     cnt = 0
-#     for i in range(dx):
-#         Sum += img[max(rect[0][1]-5,0),rect[0][0]+i]
-#         Sum += img[min(rect[1][1]+5,height-1),rect[0][0]+i]
-#         cnt += 2
-#     for i in range(dy):
-#         Sum += img[rect[0][1]+i,max(rect[0][0]-5,0)]
-#         Sum += img[rect[0][1]+i,min(rect[1][0]+5,width-1)]
-#         cnt += 2
-#     Sum = Sum/float(cnt)
-#     if Sum < 120:
-#         for i in range(dy):
-#             for j in range(dx):
-#                 img[rect[0][1]+i,rect[0][0]+j] = 255 - img[rect[0][1]+i,rect[0][0]+j]
-#     cv2.rectangle(img,(rect[0][0],rect[0][1]),(rect[1][0],rect[1][1]),(175,175,175),1)
-
-# # vis = cv2.bitwise_and(vis,mask)
-# # cv2.polylines(vis, hulls, 1, (255, 255, 255))
-
-# # vis = cv2.adaptiveThreshold(vis,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,19,0)
-
-
-# cv2.imshow('img', img)
-# cv2.imwrite('plot_rects_binarized_1.jpg', img)
 
 cv2.destroyAllWindows()
