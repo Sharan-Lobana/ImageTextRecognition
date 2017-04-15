@@ -7,15 +7,15 @@ import os
 import pickle
 import time
 useSVM = False
-useMLP = False
-useCNN = True
+useMLP = True
+useCNN = False
 
 USE_SMALL = True
 C_VAL = 10.0
 SHRINK_X = 0.5
 SHRINK_Y = 0.5
 TEST_SET_FRAC = 0.15
-DATA_FRAC = 1
+DATA_FRAC = 1.0
 NUM_CLASSES = 62
 mypath = './Train'
 
@@ -156,8 +156,8 @@ elif useMLP:
         alpha=20,
         hidden_layer_sizes=(int(128*128*SHRINK_X*SHRINK_Y),int(64*64*SHRINK_X*SHRINK_Y)),
         random_state=1,
-        learning_rate_init=0.1,
-        max_iter=100,
+        learning_rate_init=0.01,
+        max_iter=200,
         learning_rate='constant',
         verbose=True,
         tol=0.000001
