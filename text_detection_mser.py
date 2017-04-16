@@ -6,13 +6,33 @@ from sklearn import svm
 from sklearn.svm import LinearSVC
 import numpy as np
 import pickle
-import cPickle
+import cPickle, random
 CNT_INNER_RECT = 2
 
 useSVM = False
 useMLP = False
 useCNN = True
-useTextNoTextClassifier = False
+useTextNoTextClassifier = True
+def generateRandomArray(s):
+    arr = np.zeros(s)
+    for i in range(8):
+        for j in range(8):
+            val = random.random()
+            if val < .33:
+                continue
+            if val < .66:
+                for x in range(s[0]/8):
+                    for y in range(s[1]/8):
+                        arr[i*(s[0]/8)+x][j*(s[1]/8)+y] = 255
+            else:
+                for x in range(s[0]/8):
+                    for y in range(s[1]/8):
+                        if random.random() < .5:
+                            arr[i*(s[0]/8)+x][j*(s[1]/8)+y] = 255
+    # cv2.imshow('Removed Redundant MSERs', arr)
+    # cv2.waitKey(0)
+    return arr
+
 if useCNN:
     from keras.models import Sequential
     from keras.layers import Dense
@@ -118,7 +138,6 @@ def get_probable_rects(img, remove_redundant = True, rects = []):
     for i in range(len(rects)):
         mark.append(False)
     for i in range(len(rects)):
-        # print i, "of ", len(rects), "iter: ", ITER
         if mark[i]:
             continue
         Count = 0
@@ -145,7 +164,8 @@ def get_probable_rects(img, remove_redundant = True, rects = []):
             temp_rects.append(rects[i])
     return temp_rects
 
-img = cv2.imread('test3.jpg',0)  #read black and white image
+generateRandomArray((64,64))
+img = cv2.imread('test2.jpg',0)  #read black and white image
 vis = img.copy()
 rects = get_probable_rects(vis)
 
@@ -165,10 +185,6 @@ for rect in rects:
 temp = img.copy()
 cv2.imshow('Removed Redundant MSERs', temp)
 cv2.waitKey(0)
-# cv2.polylines(vis, hulls, 1, (0, 255, 0))
-
-# Y = [decoded(y) for y in Y]
-# print Y
 
 X = []
 for rect in rects:
@@ -183,9 +199,6 @@ for rect in rects:
 temp = img.copy()
 cv2.imshow('Binarized MSERs', temp)
 cv2.waitKey(0)
-
-# cv2.imwrite('plot_rects_binarized_1.jpg', img)
-#img = cv2.imread('plot_rects_binarized_1.jpg',0)
 
 mark = img.copy()
 for i in range(height):
@@ -230,27 +243,36 @@ for i in range(xlen):
 
 Xnorm = [mynormalization(image,(64,64)) for image in X]
 Xnorm = np.asarray(Xnorm)
-# Xinv = [mynormalization(image,(64,64),True) for image in X]
-# Xinv = np.asarray(Xinv)
 
-# ==============================================================================
-# Using Text No Text classfication
-isText = [1]*xlen
-if useTextNoTextClassifier:
-    model = cPickle.load(open('./TextNoTextModels/linearsvc-hog-fulltrain2-90.pickle','r'))
-    Xnormtnt = [cv2.resize(image,(32,32).flatten()) for image in Xnorm]
-    resulttnt = model.predict(Xnormtnt)
-    print resulttnt
-# ==============================================================================
-for i in range(xlen):
-    cv2.imwrite("./ExtrImgs/"+str(i)+".jpg",Xnorm[i])
-    # cv2.imwrite("./ExtrImgsInv/"+str(i)+".jpg",Xinv[i])
-
+# Add an extra dimension for giving input to CNN
 Xnorm = np.expand_dims(Xnorm,axis=3)
 Ynorm = []
 
-# Xinv = np.expand_dims(Xinv,axis=3)
-# Yinv = []
+# ==============================================================================
+# Using Text No Text classfication
+text_not_text = None
+if useTextNoTextClassifier:
+    model_filename = "./TextNoTextModels/CNN_356922_621_0.5_0.50.98.json"
+    json_file = open(model_filename, 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = model_from_json(loaded_model_json)
+    print loaded_model.summary()
+    # load weights into new model
+    loaded_model.load_weights(model_filename[:-4]+"h5")
+    print("Loaded model from disk")
+
+    # predict text or not text
+    text_not_text = loaded_model.predict_classes(Xnorm)
+    print "####################################################################"
+    print text_not_text
+    print "####################################################################"
+
+# ==============================================================================
+
+
+for i in range(xlen):
+    cv2.imwrite("./ExtrImgs/"+str(i)+".jpg",Xnorm[i])
 
 if useSVM or useMLP:
     clf = pickle.load(open('./TrainedPickles/MLP_238174_3_0.5_0.5_95.85_95.85.sav','rb'))
@@ -258,9 +280,6 @@ if useSVM or useMLP:
     Ynorm = clf.predict_proba(Xnorm)
     print Ynorm
 
-    # Xinv = [image.flatten() for image in Xinv]
-    # Yinv = clf.predict_proba(Xinv)
-    # print Yinv
 elif useCNN:
     model_filename = "./TrainedPickles/CNN_218692_62_0.5_0.50.91.json"
     json_file = open(model_filename, 'r')
@@ -279,13 +298,9 @@ elif useCNN:
     temp = vis.copy()
     for i in range(len(Y3)):
         c = Y3[i]
-        cv2.rectangle(temp,(rects[i][0][0],rects[i][0][1]),(rects[i][1][0],rects[i][1][1]),255,2)
-        cv2.putText(temp,c, (rects[i][0][0],rects[i][0][1]), cv2.FONT_HERSHEY_COMPLEX, 1, 0,1)
+        if text_not_text[i] == 1:
+            cv2.rectangle(temp,(rects[i][0][0],rects[i][0][1]),(rects[i][1][0],rects[i][1][1]),255,2)
+            cv2.putText(temp,c, (rects[i][0][0],rects[i][0][1]), cv2.FONT_HERSHEY_COMPLEX, 1, 0,1)
     cv2.imshow('prediction', temp)
+    cv2.imwrite('result.jpg',temp)
     cv2.waitKey(0)
-
-    # Yinv = loaded_model.predict_proba(Xinv)
-    # Y2inv = loaded_model.predict_classes(Xinv)
-    # print Y2inv
-    # Y4 = [decoded(y) for y in Y2inv]
-    # print Y4
