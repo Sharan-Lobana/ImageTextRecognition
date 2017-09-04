@@ -1,4 +1,5 @@
 # ImageTextRecognition
+Text Detection and Recognition in Natural Images
 
 ## Pipeline
 ### Conversion from color to gray scale
